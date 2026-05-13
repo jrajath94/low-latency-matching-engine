@@ -7,15 +7,11 @@ import pytest
 
 from low_latency_matching_engine.matching import (
     MatchingEngine,
-    Order,
     OrderBook,
     OrderStatus,
     OrderType,
-    PriceLevel,
     Side,
-    Trade,
 )
-
 
 # --- Fixtures ---
 

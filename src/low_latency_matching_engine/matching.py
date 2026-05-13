@@ -10,7 +10,6 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +143,7 @@ class PriceLevel:
         """
         self.orders.append(order)
 
-    def remove_order(self, order_id: int) -> Optional[Order]:
+    def remove_order(self, order_id: int) -> Order | None:
         """Remove a specific order from this level.
 
         Args:
@@ -179,21 +178,21 @@ class OrderBook:
         self._order_index: dict[int, tuple[Side, float]] = {}
 
     @property
-    def best_bid(self) -> Optional[float]:
+    def best_bid(self) -> float | None:
         """Highest bid price, or None if no bids."""
         if not self._bids:
             return None
         return self._bids[0].price
 
     @property
-    def best_ask(self) -> Optional[float]:
+    def best_ask(self) -> float | None:
         """Lowest ask price, or None if no asks."""
         if not self._asks:
             return None
         return self._asks[0].price
 
     @property
-    def spread(self) -> Optional[float]:
+    def spread(self) -> float | None:
         """Bid-ask spread, or None if either side is empty."""
         bid = self.best_bid
         ask = self.best_ask
@@ -221,7 +220,7 @@ class OrderBook:
         self._insert_into_levels(levels, order)
         self._order_index[order.order_id] = (order.side, order.price)
 
-    def remove_order(self, order_id: int) -> Optional[Order]:
+    def remove_order(self, order_id: int) -> Order | None:
         """Remove an order from the book by ID.
 
         Args:
@@ -302,7 +301,7 @@ class OrderBook:
         levels: list[PriceLevel],
         order_id: int,
         price: float,
-    ) -> Optional[Order]:
+    ) -> Order | None:
         """Remove an order from the appropriate price level.
 
         Args:
@@ -424,8 +423,8 @@ class MatchingEngine:
     def modify_order(
         self,
         order_id: int,
-        new_quantity: Optional[float] = None,
-        new_price: Optional[float] = None,
+        new_quantity: float | None = None,
+        new_price: float | None = None,
     ) -> Order:
         """Modify a resting order's quantity or price.
 
@@ -471,7 +470,7 @@ class MatchingEngine:
         logger.info("Modified order %d", order_id)
         return order
 
-    def get_order(self, order_id: int) -> Optional[Order]:
+    def get_order(self, order_id: int) -> Order | None:
         """Look up an order by ID.
 
         Args:
@@ -482,7 +481,7 @@ class MatchingEngine:
         """
         return self._orders.get(order_id)
 
-    def get_book(self, symbol: str) -> Optional[OrderBook]:
+    def get_book(self, symbol: str) -> OrderBook | None:
         """Get the order book for a symbol.
 
         Args:
@@ -795,8 +794,8 @@ class MatchingEngine:
     def _validate_modify(
         self,
         order: Order,
-        new_quantity: Optional[float],
-        new_price: Optional[float],
+        new_quantity: float | None,
+        new_price: float | None,
     ) -> None:
         """Validate order modification parameters.
 
