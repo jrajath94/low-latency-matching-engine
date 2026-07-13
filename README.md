@@ -40,7 +40,7 @@ graph TD
 
 The engine maintains buy-side and sell-side order books as Red-Black Trees sorted by price, with FIFO queues at each price level for time priority. When a buy order arrives, the matching loop walks the sell side starting at the best ask. At each price level, it fills against resting orders in FIFO order until the incoming quantity is exhausted or no compatible prices remain.
 
-The critical design constraint: the matching loop cannot afford function calls, memory allocations, or cache misses. The Order struct is designed around 64-byte cache-line alignment so that sequential iteration hits only L1 cache. The memory pool pre-allocates all objects at startup; allocation and deallocation are single pointer operations.
+This Python implementation prioritizes readability and algorithmic clarity. Production C++ implementations apply additional optimizations (cache-line alignment, pre-allocated memory pools, seqlock synchronization) to achieve sub-microsecond latencies.
 
 ## Quick Start
 
@@ -49,7 +49,6 @@ git clone https://github.com/jrajath94/low-latency-matching-engine.git
 cd low-latency-matching-engine
 make install
 make test
-make bench
 ```
 
 ## Usage
@@ -65,6 +64,8 @@ print(result['fills'])  # [{'price': 450.0, 'quantity': 500, 'buy_id': 1, 'sell_
 
 ## Design Decisions
 
+The following design decisions reflect how production C++ exchange engines are built. The Python reference implementation uses a subset of these optimizations (core matching algorithm, order book structure, price-time priority) while prioritizing readability over microsecond-scale performance.
+
 | Decision | Rationale | Alternative Considered | Tradeoff |
 | --- | --- | --- | --- |
 | 64-byte cache-line-aligned Order struct | Eliminates cross-cache-line access; each order loads in one L1 fetch. In a C++ impl this yields ~30% latency reduction (L1 hit rate 87.6% → 99.2%). | Packed struct (saves memory) | 26 bytes of padding per order, but L1 hit rate improves dramatically |
@@ -78,11 +79,11 @@ print(result['fills'])  # [{'price': 450.0, 'quantity': 500, 'buy_id': 1, 'sell_
 
 **The matching loop** is the heart of the engine. When an incoming buy order arrives, the loop walks the sell-side book starting from the best ask (lowest price). At each price level, it fills against resting orders in FIFO order. For each fill, it updates quantities on both sides, publishes a trade event (non-blocking), and deallocates fully-filled orders back to the pool. If the price level is emptied, the Red-Black Tree node is removed. The entire loop operates within L1 cache for typical book depths.
 
-**Cache-line alignment** is the single most impactful optimization in C++ production engines. A CPU cache line is 64 bytes. If an Order struct is 60 bytes and allocated sequentially, each order spans two cache lines — reading `order[0]` and `order[1]` loads 128 bytes of cache (4 lines). Padding to exactly 64 bytes means each order fits in one line. When iterating through orders at a price level, every load is a cache hit. The Python implementation carries the same alignment rationale in its data structure design.
+**Production optimizations** that separate exchange engines from reference implementations:
 
-**The memory pool** eliminates the second major latency source. Every call to `new` or `malloc` can trigger system calls, page faults, and cache pollution. The pool pre-allocates 1 million Order objects (64MB) at startup as a contiguous array. Allocation is a single pointer decrement from a free list. Deallocation is a single pointer increment. No system calls, no fragmentation, no cache pollution.
-
-**The seqlock pattern** solves the concurrent reader problem without blocking the matching thread. The matching thread increments an atomic sequence counter before and after each write (odd = writing, even = done). Reader threads check the counter before reading, then check again after. If the counter changed, the reader retries. In practice, retries are extremely rare — the write window is nanoseconds. Readers complete without acquiring any lock.
+- **Cache-line alignment:** A CPU cache line is 64 bytes. Production engines pad Order structs to 64 bytes so each order fits in a single cache line, eliminating cache misses during iteration.
+- **Memory pools:** Pre-allocating order objects eliminates heap allocation overhead (system calls, page faults, fragmentation) from the matching loop.
+- **Seqlock readers:** A single-writer (matching thread) never blocks readers. Readers check an atomic sequence counter before and after reading; on conflict, they retry. The write window is nanoseconds, so retries are rare.
 
 **Network I/O** is the other bottleneck in production. The matching engine logic runs at sub-microsecond scale, but standard TCP/IP adds 5-50 microseconds of kernel overhead. Production exchanges use kernel-bypass networking (DPDK, Solarflare OpenOnload) to poll the NIC directly from userspace, eliminating interrupts, context switches, and buffer copies. This brings network latency to 1-3 microseconds.
 
@@ -92,7 +93,6 @@ print(result['fills'])  # [{'price': 450.0, 'quantity': 500, 'buy_id': 1, 'sell_
 
 ```bash
 make test    # Price-time priority correctness, partial fills, cancellation, concurrent access
-make bench   # Throughput benchmarks
 ```
 
 ## Project Structure
@@ -103,11 +103,7 @@ low-latency-matching-engine/
         __init__.py              # Package exports
         matching.py              # Python price-time priority matching implementation
     tests/                       # Correctness + concurrency tests
-    benchmarks/                  # Throughput benchmarks
-    docs/
-        architecture.md          # System design + cache optimization rationale
-        interview-prep.md        # Technical deep-dive
-    Makefile                     # install, test, bench
+    Makefile                     # install, test
     pyproject.toml               # Build config
 ```
 
